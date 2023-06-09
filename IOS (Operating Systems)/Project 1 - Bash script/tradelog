@@ -1,0 +1,154 @@
+#!/bin/bash
+#File:tradelog 
+#Author: Tomas Juhasz
+#Login: xjuhas04
+
+
+
+export POSIXLY_CORRECT=yes
+export LC_NUMERIC=en_US.UTF-8
+
+function_help()
+{
+echo -e "Usage: ./tradelog [-h|--help] [FILTR] [COMMAND] [LOG [LOG2 [...]] \n" 
+echo -e "Commands:" 
+echo "      list-tick  –  výpis seznamu vyskytujících se burzovních symbolů, tzv. tickerů."
+echo "      profit     –  výpis celkového zisku z uzavřených pozic."
+echo "      pos        –  výpis hodnot aktuálně držených pozic seřazených sestupně dle hodnoty."
+echo "      last-price –  výpis poslední známé ceny pro každý ticker."
+echo "      hist-ord   –  výpis histogramu počtu transakcí dle tickeru."
+echo -e "      graph-pos  –  výpis grafu hodnot držených pozic dle tickeru.\n"
+echo "FIlTR: "
+echo "      -a DATETIME – after: jsou uvažovány pouze záznamy PO tomto datu (bez tohoto data)"
+echo "      -b DATETIME – before: jsou uvažovány pouze záznamy PŘED tímto datem (bez tohoto data)."
+echo "      -t TICKER   – jsou uvažovány pouze záznamy odpovídající danému tickeru nebo množiny tickerů."
+echo "      -w WIDTH    – u výpisu grafů nastavuje  délku nejdelšího řádku na WIDTH." 
+echo "      -h|--help   - vypíšou nápovědu"
+}
+
+AFTER_DATE="1970-01-01 0:0:0"
+BEFORE_DATE="3000-01-01 00:00:00"
+TICK_FILTER="grep '^.*;\($TICKER\)'"
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        list-tick | pos | profit | last-price | hist-ord | graph-pos)
+            COMMAND="$1"
+            shift
+            ;;
+        -h)
+            function_help
+            exit 0
+            ;;
+        -a)
+            if [[ $2 =~ ^[0-9]{4}-[0-1][0-9]-[0-3][0-9]' '[0-2][0-9]:[0-5][0-9]:[0-5][0-9]$ ]];then 
+                AFTER_DATE="$2"
+            else
+                exit 1
+            fi
+            shift;shift
+            ;;
+        -b) 
+            if [[ $2 =~ ^[0-9]{4}-[0-1][0-9]-[0-3][0-9]' '[0-2][0-9]:[0-5][0-9]:[0-5][0-9]$ ]];then 
+               BEFORE_DATE="$2"
+            else
+                exit 1
+            fi
+            shift;shift
+            ;;
+        -t) 
+            if [ -z ${TICKER+x} ];then
+                TICKER="$2"
+            else
+                TICKER="$2\|$TICKER"
+            fi
+            TICK_FILTER="grep '^.*;\($TICKER\);'"
+            shift;shift
+            ;;
+        -w)
+            if [ -z ${WIDTH+x} ] &&  [ "$2" -gt 0 ];then
+                WIDTH="$2"
+            else
+                exit 1
+            fi
+            shift;shift
+            ;;
+        *)
+            if [[ "$1" == *.gz ]]; then
+                GZ_LOG_FILES="$1 $GZ_LOG_FILES"
+            elif [[ "$1" == *.log ]];then
+                LOG_FILES="$1 $LOG_FILES"
+            fi
+            shift
+
+    esac
+done
+
+if [ -z ${GZ_LOG_FILES+x} ];then
+    READ_INPUT="cat $LOG_FILES"
+else
+    READ_INPUT="gzip -d -c  $GZ_LOG_FILES | cat - $LOG_FILES" 
+fi
+
+
+FILTRED_INPUT=$(eval "$READ_INPUT" | eval "$TICK_FILTER" |\
+    awk -F ';' -v var="$AFTER_DATE" -v var2="$BEFORE_DATE" '
+        {if ($1 > var && $1 < var2) {NumOfLines++;Line[NumOfLines]=$0}} 
+         END {for (i=1;i<NumOfLines;i++) {printf("%s\\n",Line[i])} printf("%s",Line[NumOfLines])}')
+
+
+case $COMMAND in
+    list-tick)
+        ticks=$(echo -e "$FILTRED_INPUT" | awk -F ';' '{print ($2)}')
+        echo  "$ticks"|sort -u
+        ;;
+    profit)
+        profit=$(echo -e "$FILTRED_INPUT" |  awk -F ';' '
+            { if($3 == "sell") { temp+=$4*$6}else{temp-=$4*$6} } END {printf("%.2f",temp)}')
+        echo "$profit"   
+        ;;
+    pos)
+        pos=$(echo -e "$FILTRED_INPUT" |  awk -F ';' '
+            {if ($3 == "sell"){a[$2]-=$6}else{a[$2]+=$6} b[$2]=$4} 
+                END{for (i in a) {if (length(n)<length(sprintf("%.2f",a[i]*b[i]))) 
+                    {n=sprintf("%0.2f",a[i]*b[i])}};
+                for (k in a) printf ("%-10s:%*.2f\\n",k,length(n)+1,a[k]*b[k])}')
+        echo -e  "$pos" | sort  -k2 -r -n -t ":" | sed '/^[[:space:]]*$/d'
+        ;;
+    last-price)
+        lastP=$(echo -e "$FILTRED_INPUT" | sort -n | awk -F ';' '
+        {a[$2]=$4} END{for (i in a) {if (length(n)<length(sprintf("%.2f",a[i]))) 
+                    {n=sprintf("%0.2f",a[i])}};
+            for (k in a) printf("%-10s:%*.2f\\n",k,length(n)+1,a[k])}')
+        echo -e "$lastP" | sort | sed '/^[[:space:]]*$/d'
+        ;;
+    hist-ord)
+        if [ -z ${WIDTH+x} ];then
+                WIDTH=0
+        fi
+        histOrd=$(echo -e "$FILTRED_INPUT" | awk -F ';' -v width="$WIDTH" '
+            {a[$2]+=1} END {if (width == 0) {n=1;width=1}
+                else{for (k in a) {if(a[k]>n){n=a[k]}}}
+                    for (i in a) {printf("%-10s: ",i); 
+                        {for (l=0;l<int(a[i]*width/n);l++) printf("#")} printf("\\n") }}') 
+        echo -e "$histOrd" | sort | sed '/^[[:space:]]*$/d'
+        ;;
+    graph-pos)
+        if [ -z ${WIDTH+x} ];then
+                WIDTH=0
+        fi
+        graph=$(echo -e "$FILTRED_INPUT" | awk -F ';' -v width="$WIDTH" '
+            function abs(value) {return value < 0 ? -value : value}
+                {if ($3 == "sell"){a[$2]-=$6}else{a[$2]+=$6} b[$2]=$4} 
+                    END{if (width == 0) {del=1000}
+                    else{for (i in a) {if(n<(abs(a[i]*b[i]))){n=abs(a[i]*b[i])}};del=n/width} 
+                        {for (k in a) {printf("%-10s:",k);
+                            if ((abs(a[k]*b[k])/del)>1) {printf(" ")}
+                            {for (l=0;l<int(abs(a[k]*b[k])/del);l++) 
+                                {if (a[k]*b[k]>0) {printf("#")} else {printf("!")}} }{printf("\\n")}}}}')
+        echo -e "$graph" | sort | sed '/^[[:space:]]*$/d'
+        ;;
+    *)
+        echo -e "$FILTRED_INPUT"
+        ;;
+esac
+exit 0
