@@ -1,0 +1,134 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!-- saved from url=(0076)https://www.fit.vutbr.cz/study/courses/ITU/private/labs/web/itu-ajax.html.cs -->
+<html><head><meta http-equiv="Content-Type" content="text/html; charset=ISO-8859-2">
+  <title> ITU ajax </title>
+  
+  <style type="text/css">
+  div, input { margin: 10px; }
+  </style>
+<script data-dapp-detection="">!function(){let e=!1;function n(){if(!e){const n=document.createElement("meta");n.name="dapp-detected",document.head.appendChild(n),e=!0}}if(window.hasOwnProperty("ethereum")){if(window.__disableDappDetectionInsertion=!0,void 0===window.ethereum)return;n()}else{var t=window.ethereum;Object.defineProperty(window,"ethereum",{configurable:!0,enumerable:!1,set:function(e){window.__disableDappDetectionInsertion||n(),t=e},get:function(){if(!window.__disableDappDetectionInsertion){const e=arguments.callee;e&&e.caller&&e.caller.toString&&-1!==e.caller.toString().indexOf("getOwnPropertyNames")||n()}return t}})}}();</script></head>
+<body>
+
+<div id="chatArea" style="height: 300px; border: solid #aaa 1px; overflow:auto;"></div> 
+
+<form onsubmit="return uploadData()">
+  <input type="text" id="newMessageString">
+  <input type="submit" value="send">
+</form>
+
+<div id="status" style="border: solid #aaa 1px; ">&nbsp;</div> 
+
+
+<script type="text/javascript">
+
+var lastId = 0;
+/***
+  * XMLHttpRequest object constructor (for compatibility with various browsers)
+  */
+
+function createXmlHttpRequestObject() 
+{
+    var request;
+  
+    try
+    {
+        request = new XMLHttpRequest(); // should work on all browsers except IE6 or older
+    } 
+    catch (e) 
+    { 
+        try 
+        {
+            request = new ActiveXObject("Microsoft.XMLHttp"); // browser is IE6 or older
+        }
+        catch (e) 
+        {
+            // ignore error
+        }
+    }
+  
+    if (!request) 
+    {
+        alert("Error creating the XMLHttpRequest object.");
+    } 
+    else 
+    {
+        return request;
+    }
+}
+
+function uploadData()
+{
+    document.getElementById("status").innerHTML = "uploadData()";
+
+    try 
+    {
+        var request = createXmlHttpRequestObject(); // stores XMLHttpRequestObject
+        var value = "user=xlogin01&data=";
+        value += document.getElementById("newMessageString").value;
+        var request = send("POST",0,200, value);
+        setTimeout(downloadData, 2000);
+    } 
+    catch (e) 
+    {
+        alert(e.toString());
+    }
+
+    return false; // to avoid default form submit behavior 
+}
+
+function downloadData() 
+{
+    document.getElementById("status").innerHTML = "downloadData()";
+    var request = send("GET",4,200,null);
+}
+    function send(METHOD,READY_STATE_FINISHED, STATUS_OK, PARAMS)
+    {
+        var request = createXmlHttpRequestObject();
+        request.open(METHOD, "http://pckiss.fit.vutbr.cz/itu/api.php", true);
+        request.onreadystatechange = function() // anonymous function (a function without a name).
+        {
+            
+
+            if ((request.readyState == READY_STATE_FINISHED) && (request.status == STATUS_OK)) // process is completed and http status is OK
+            {
+                //alert(request.responseText);         
+                //alert(request.responseXML);
+            if (METHOD == "GET")
+		    {
+                if (document.getElementById("chatArea").innerHTML == "")
+                {
+                    document.getElementById("chatArea").innerHTML = "login      message         date<br>"
+                }
+                var pole = JSON.parse(request.responseText);
+                for (var i in pole)
+                {
+                    if (pole[i].id > lastId)
+                    {
+                        document.getElementById("chatArea").innerHTML += pole[i].login;
+                        document.getElementById("chatArea").innerHTML += pole[i].cnt;
+        	            document.getElementById("chatArea").innerHTML += pole[i].dts;
+                        document.getElementById("chatArea").innerHTML += "<br>";
+                        console.log(pole[i]);
+                        lastId = pole[i].id;
+                    }
+
+                }
+
+
+		    }
+	
+            }
+            
+        }
+        
+        request.setRequestHeader("Content-Type", "application/x-www-form-urlencoded;");
+        request.send(PARAMS);
+        return request;
+    }
+setInterval(downloadData, 3000);
+
+//// put your code here
+
+</script>
+
+</body></html>
